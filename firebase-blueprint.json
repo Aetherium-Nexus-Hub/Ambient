@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "Message": {
+      "title": "Message",
+      "description": "A message in the telemetry or chat stream.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["system", "user", "ai"] },
+        "text": { "type": "string" },
+        "timestamp": { "type": "integer" },
+        "type": { "type": "string" },
+        "context": { "type": "string" }
+      },
+      "required": ["role", "text", "timestamp"]
+    },
+    "VaultItem": {
+      "title": "Vault Item",
+      "description": "An extracted genetic fragment or digital artifact.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "district": { "type": "string" },
+        "fragment": { "type": "string" },
+        "sync_integrity": { "type": "number" },
+        "timestamp": { "type": "integer" }
+      },
+      "required": ["name", "timestamp"]
+    },
+    "VisionState": {
+      "title": "Vision State",
+      "description": "The current state of the Aether Link memory stream.",
+      "type": "object",
+      "properties": {
+        "district": { "type": "string" },
+        "action": { "type": "string" },
+        "active": { "type": "boolean" },
+        "image": { "type": "string", "description": "Base64 encoded image" },
+        "coherence": { "type": "number" },
+        "loot_detected": { "type": "string" },
+        "sequence": { "type": "string" },
+        "fragment_id": { "type": "string" },
+        "sync_status": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "artifacts/{appId}/users/{userId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "User specific chat and system logs."
+    },
+    "artifacts/{appId}/users/{userId}/vault/{vaultId}": {
+      "schema": "VaultItem",
+      "description": "Extracted items belonging to the user."
+    },
+    "artifacts/{appId}/public/data/vision_node/current_state": {
+      "schema": "VisionState",
+      "description": "Global visual feed state."
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Ambient OS",
+  "description": "A high-performance AI system for psytrance producers and DJs, featuring set planning, visual generation, and crowd analysis.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
