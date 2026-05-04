@@ -1,60 +1,72 @@
 {
   "entities": {
-    "Message": {
-      "title": "Message",
-      "description": "A message in the telemetry or chat stream.",
-      "type": "object",
-      "properties": {
-        "role": { "type": "string", "enum": ["system", "user", "ai"] },
-        "text": { "type": "string" },
-        "timestamp": { "type": "integer" },
-        "type": { "type": "string" },
-        "context": { "type": "string" }
-      },
-      "required": ["role", "text", "timestamp"]
-    },
-    "VaultItem": {
-      "title": "Vault Item",
-      "description": "An extracted genetic fragment or digital artifact.",
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "district": { "type": "string" },
-        "fragment": { "type": "string" },
-        "sync_integrity": { "type": "number" },
-        "timestamp": { "type": "integer" }
-      },
-      "required": ["name", "timestamp"]
-    },
     "VisionState": {
       "title": "Vision State",
-      "description": "The current state of the Aether Link memory stream.",
+      "description": "The current state of the Animus vision node.",
       "type": "object",
       "properties": {
         "district": { "type": "string" },
         "action": { "type": "string" },
         "active": { "type": "boolean" },
-        "image": { "type": "string", "description": "Base64 encoded image" },
+        "image": { "type": "string" },
         "coherence": { "type": "number" },
         "loot_detected": { "type": "string" },
         "sequence": { "type": "string" },
         "fragment_id": { "type": "string" },
         "sync_status": { "type": "string" }
       }
+    },
+    "VaultItem": {
+      "title": "Vault Item",
+      "description": "An extracted genetic fragment stored in the user's private vault.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "district": { "type": "string" },
+        "fragment": { "type": "string" },
+        "sync_integrity": { "type": "number" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["name", "district", "fragment", "timestamp"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A telemetry log or chat message.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "ai", "system"] },
+        "text": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "type": { "type": "string" },
+        "context": { "type": "string" }
+      },
+      "required": ["role", "text", "timestamp"]
+    },
+    "ConnectivityTest": {
+      "title": "Connectivity Test",
+      "description": "A document used to test Firebase connectivity.",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string" }
+      }
     }
   },
   "firestore": {
-    "artifacts/{appId}/users/{userId}/messages/{messageId}": {
-      "schema": "Message",
-      "description": "User specific chat and system logs."
-    },
-    "artifacts/{appId}/users/{userId}/vault/{vaultId}": {
-      "schema": "VaultItem",
-      "description": "Extracted items belonging to the user."
-    },
-    "artifacts/{appId}/public/data/vision_node/current_state": {
+    "/artifacts/{appId}/public/data/vision_node/current_state": {
       "schema": "VisionState",
-      "description": "Global visual feed state."
+      "description": "Public vision node state."
+    },
+    "/artifacts/{appId}/public/connectivity": {
+      "schema": "ConnectivityTest",
+      "description": "Used to test database connection."
+    },
+    "/artifacts/{appId}/users/{userId}/vault/{itemId}": {
+      "schema": "VaultItem",
+      "description": "User's private vault items."
+    },
+    "/artifacts/{appId}/users/{userId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "User's session telemetry logs."
     }
   }
 }

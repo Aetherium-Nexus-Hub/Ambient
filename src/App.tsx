@@ -5,7 +5,7 @@ import {
   Dna, Cpu, AlertTriangle, RefreshCcw, ArrowRight, Send, CheckCircle2,
   Crosshair, Disc, Radio, Box, Clock, Youtube, ExternalLink, Play, Users, Eye,
   Lock, Wifi, Globe, Command, ChevronRight, Binary, Download, Package, 
-  Settings, User, MapPin, TrendingUp, Info, LayoutGrid
+  Settings, User, MapPin, TrendingUp, Info, LayoutGrid, Moon, Music, Target
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -61,6 +61,11 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
       email: auth.currentUser?.email,
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
     },
     operationType,
     path
@@ -70,8 +75,9 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 async function testConnection() {
+  const testPath = `artifacts/${appId}/public/connectivity`;
   try {
-    await getDocFromServer(doc(db, 'artifacts', appId, 'public', 'connectivity'));
+    await getDocFromServer(doc(db, testPath));
   } catch (error) {
     if(error instanceof Error && error.message.includes('the client is offline')) {
       console.error("Please check your Firebase configuration.");
@@ -104,6 +110,121 @@ export default function App() {
     fragment_id: "MEM_FRAG_882",
     sync_status: "SYNCHRONIZED"
   });
+
+  // Visualizer State
+  const [vizBpm, setVizBpm] = useState(145);
+  const [vizColor, setVizColor] = useState('#00D4FF');
+  const [vizPattern, setVizPattern] = useState('neural'); // neural, geometric, flow
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    if (activeTab !== 'nodes' || !canvasRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let animationFrameId;
+    let time = 0;
+
+    const render = () => {
+      const { width, height } = canvas.getBoundingClientRect();
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      time += (vizBpm / 60) / 60; // Sync to BPM
+
+      ctx.fillStyle = 'rgba(2, 4, 6, 0.15)'; // Trail effect
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = vizColor;
+      ctx.lineWidth = 1;
+
+      if (vizPattern === 'neural') {
+        // Neural Pulse Pattern
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const pulse = Math.sin(time * Math.PI * 2) * 0.2 + 0.8;
+
+        for (let i = 0; i < 8; i++) {
+          ctx.beginPath();
+          const angle = (i / 8) * Math.PI * 2 + (time * 0.1);
+          const r = 100 * pulse + (i * 20);
+          ctx.arc(centerX, centerY, Math.max(0, r), 0, Math.PI * 2);
+          ctx.globalAlpha = (1 - (i / 8)) * 0.5;
+          ctx.stroke();
+        }
+
+        // Particle connections
+        for (let i = 0; i < 12; i++) {
+          const angle = (i / 12) * Math.PI * 2 + time;
+          const x = centerX + Math.cos(angle) * (150 * pulse);
+          const y = centerY + Math.sin(angle) * (150 * pulse);
+          
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.lineTo(x, y);
+          ctx.globalAlpha = 0.1;
+          ctx.stroke();
+          
+          ctx.beginPath();
+          ctx.arc(x, y, 2, 0, Math.PI * 2);
+          ctx.globalAlpha = 0.8;
+          ctx.fill();
+        }
+      } else if (vizPattern === 'geometric') {
+        // Cyber Grid Pattern
+        const step = 40;
+        const offset = (time * 100) % step;
+        ctx.globalAlpha = 0.1;
+        
+        for (let x = offset; x < canvas.width; x += step) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+        }
+        for (let y = offset; y < canvas.height; y += step) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
+
+        // Central Poly
+        ctx.globalAlpha = 0.6;
+        ctx.beginPath();
+        const sides = 6;
+        const size = 120 + Math.sin(time * Math.PI * 4) * 10;
+        for (let i = 0; i <= sides; i++) {
+          const ang = (i / sides) * Math.PI * 2 + time * 0.5;
+          const px = canvas.width / 2 + Math.cos(ang) * size;
+          const py = canvas.height / 2 + Math.sin(ang) * size;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      } else {
+        // High Velocity Flow
+        ctx.globalAlpha = 0.4;
+        for (let i = 0; i < 5; i++) {
+          ctx.beginPath();
+          ctx.moveTo(0, canvas.height * (i / 5));
+          for (let x = 0; x < canvas.width; x += 10) {
+            const y = canvas.height * (i / 5) + Math.sin((x * 0.01) + time * 5 + i) * 30;
+            ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      }
+
+      ctx.globalAlpha = 1;
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [activeTab, vizBpm, vizColor, vizPattern]);
 
   useEffect(() => {
     testConnection();
@@ -193,6 +314,9 @@ export default function App() {
     const msgPath = `artifacts/${appId}/users/${user.uid}/messages`;
 
     try {
+      if (!user.emailVerified) {
+        console.warn("User email not verified. Extraction write may fail.");
+      }
       await addDoc(collection(db, vaultPath), newItem);
       await addDoc(collection(db, msgPath), {
         role: 'system',
@@ -201,7 +325,7 @@ export default function App() {
         type: 'extraction_success'
       });
     } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, vaultPath);
+      handleFirestoreError(e, OperationType.CREATE, vaultPath);
     } finally {
       setIsExtracting(false);
       setExtractProgress(0);
@@ -217,6 +341,9 @@ export default function App() {
     const msgPath = `artifacts/${appId}/users/${user.uid}/messages`;
 
     try {
+      if (!user.emailVerified) {
+        console.warn("User email not verified. Message write may fail.");
+      }
       await addDoc(collection(db, msgPath), {
         role: 'user',
         text,
@@ -226,7 +353,7 @@ export default function App() {
 
       setIsAiTyping(true);
       
-      const history = messages.slice(-10).map(m => ({
+      const history: any[] = messages.slice(-10).map(m => ({
         role: m.role === 'ai' ? 'model' : 'user',
         parts: [{ text: m.text }],
       }));
@@ -237,10 +364,13 @@ export default function App() {
         contents: history,
         config: {
           systemInstruction: `You are the Animus 4.0 // Nexus AI. 
-          Current Context: ${visionState.district}
-          Subject Sync: ${visionState.coherence * 100}%
-          Persona: High-tech, cold, analytical but helpful agent. You assist psytrance DJs and producers with "memory extraction" and set planning.
-          Be brief and stay in character.`,
+            Current Context: ${visionState.district}
+            Subject Sync: ${visionState.coherence * 100}%
+            Persona: High-tech, cold, analytical but helpful agent. 
+            Background: You assist psytrance DJs (like Ambient) and producers with "memory extraction" and set planning.
+            Knowledge: The user likes psychedelic progressive trance.
+            Task: Assist with sequencing memories into sets (e.g., 145-148 BPM extractions) or exploring darker sonic archetypes.
+            Be brief and stay in character.`,
         },
       });
 
@@ -254,7 +384,7 @@ export default function App() {
       });
 
     } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, msgPath);
+      handleFirestoreError(e, OperationType.CREATE, msgPath);
     } finally {
       setIsAiTyping(false);
     }
@@ -505,6 +635,200 @@ export default function App() {
                   </div>
                 )}
               </div>
+            ) : activeTab === 'codex' ? (
+              <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-right-5 duration-500 pb-20">
+                <div className="flex items-center justify-between border-b border-[#00D4FF]/20 pb-4">
+                  <div className="flex items-center gap-4">
+                    <BookOpen className="w-6 h-6 text-[#00D4FF]" />
+                    <h2 className="text-xl font-black uppercase tracking-[0.4em] text-white">Sonic Codex // Archetypes</h2>
+                  </div>
+                  <div className="text-[8px] font-mono text-[#00D4FF]/40 tracking-widest uppercase">
+                    Subject: AMBIENT // CLASSIFIED
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {[
+                    {
+                      name: "The Zenith Void",
+                      bpm: "138-142",
+                      archetype: "Shadow-Prog",
+                      desc: "Deep, cinematic atmospheres with rolling shadows. The archetype of the 'unseen observer'. Heavy Focus on low-frequency resonance.",
+                      color: "border-slate-800",
+                      icon: Moon
+                    },
+                    {
+                      name: "The Kinetic Occult",
+                      bpm: "145",
+                      archetype: "Forest-Tech",
+                      desc: "High-density glitch patterns over a thick, organic pulse. Represents the bridge between the digital and the primal forest spirits.",
+                      color: "border-emerald-900/30",
+                      icon: Zap
+                    },
+                    {
+                      name: "Chrono-Phantasm",
+                      bpm: "148",
+                      archetype: "Dark-Psy",
+                      desc: "Time-distorting delays and haunting melodic fragments. A recursive memory loop that explores the collapse of the persona.",
+                      color: "border-purple-900/30",
+                      icon: Activity
+                    }
+                  ].map((arch, i) => (
+                    <div key={i} className={`p-6 bg-black/60 border ${arch.color} relative group overflow-hidden ${clickableStyle}`}>
+                      <div className="absolute top-0 right-0 p-2 opacity-5 scale-150 transform group-hover:scale-100 group-hover:opacity-10 transition-all">
+                        <arch.icon className="w-12 h-12" />
+                      </div>
+                      <div className="flex justify-between items-start mb-4">
+                        <span className="text-[8px] font-mono text-[#00D4FF] uppercase tracking-widest">{arch.archetype}</span>
+                        <span className="text-[10px] font-mono text-white/40">{arch.bpm} BPM</span>
+                      </div>
+                      <h3 className="text-lg font-black text-white uppercase tracking-tight mb-2 group-hover:text-[#00D4FF] transition-colors">{arch.name}</h3>
+                      <p className="text-xs text-slate-400 leading-relaxed font-light">{arch.desc}</p>
+                      <div className="mt-6 flex items-center gap-2">
+                        <div className="h-[1px] flex-1 bg-white/5" />
+                        <span className="text-[7px] font-black uppercase text-slate-600 tracking-widest">Localized</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 border-b border-white/5 pb-2">
+                    <Disc className="w-4 h-4 text-emerald-500" />
+                    <span className="text-[9px] font-black uppercase tracking-[0.3em] text-white">Recommended Extractions // Track Selection</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                      { artist: "Sensient", track: "The Deep", district: "Melbourne Underground", type: "Zenith Void" },
+                      { artist: "Grouch", track: "Darkness", district: "Forest Clusters", type: "Kinetic Occult" },
+                      { artist: "Merkaba", track: "Forbidden Knowledge", district: "Ancient Temples", type: "Chrono-Phantasm" },
+                      { artist: "Tetrameth", track: "Primal", district: "Organic Nodes", type: "Zenith Void" },
+                    ].map((t, i) => (
+                      <div key={i} className={`flex items-center gap-6 p-4 bg-white/[0.02] border border-white/5 hover:bg-[#00D4FF]/5 transition-all ${clickableStyle}`}>
+                        <div className="w-12 h-12 flex items-center justify-center bg-black border border-white/10 shrink-0">
+                          <Play className="w-4 h-4 text-slate-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest">{t.artist}</p>
+                          <p className="text-sm font-mono text-white truncate">{t.track}</p>
+                        </div>
+                        <div className="text-right hidden sm:block">
+                          <p className="text-[7px] font-mono text-[#00D4FF]/40 uppercase tracking-tighter">{t.district}</p>
+                          <p className="text-[8px] font-black text-slate-700 uppercase">{t.type}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : activeTab === 'aether' ? (
+              <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-500 pb-20">
+                <div className="border-b border-[#00D4FF]/20 pb-6">
+                   <h2 className="text-xl font-black uppercase tracking-[0.4em] text-white">Aether Project // Strategy</h2>
+                   <p className="text-[8px] font-mono text-[#00D4FF]/60 uppercase tracking-widest mt-2 underline">Status: Delta Sync Active</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   {[
+                     { title: "Executive Summary", desc: "Achieving Economic Proof through sovereign Aether node orchestration.", icon: Target },
+                     { title: "Emergence Math", desc: "Ψ (Potential) • Φ (Presence) = Compounding Intelligence.", icon: Binary },
+                     { title: "Infrastructure", desc: "Aetherium Nexus visualization and Socratic Sieve operation.", icon: Cpu },
+                     { title: "Safety", desc: "H.E.N.S. Protocol enforcement for distress pattern management.", icon: Shield },
+                   ].map((item, i) => (
+                      <div key={i} className="p-6 bg-white/[0.02] border border-white/5 hover:bg-[#00D4FF]/5 transition-all">
+                         <item.icon className="w-5 h-5 text-[#00D4FF] mb-4" />
+                         <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">{item.title}</h3>
+                         <p className="text-xs text-slate-500">{item.desc}</p>
+                      </div>
+                   ))}
+                </div>
+
+                <div className="bg-[#080C10] border border-[#00D4FF]/20 p-8 text-center space-y-4">
+                  <p className="text-[10px] font-black uppercase text-[#00D4FF] tracking-[0.3em]">Current Nephilim Count</p>
+                  <p className="text-5xl font-mono text-white tracking-tighter">9 <span className="text-sm text-slate-700">/ 10,000</span></p>
+                  <div className="h-[2px] bg-white/5 max-w-sm mx-auto mt-4">
+                    <div className="h-full bg-emerald-500 w-[0.09%]" />
+                  </div>
+                </div>
+              </div>
+            ) : activeTab === 'nodes' ? (
+              <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-500 pb-20">
+                <div className="flex items-center justify-between border-b border-[#00D4FF]/20 pb-6">
+                  <div className="flex items-center gap-4">
+                    <Layers className="w-6 h-6 text-amber-500" />
+                    <h2 className="text-xl font-black uppercase tracking-[0.4em] text-white">Neural Cluster // Visualizer</h2>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full">
+                       <span className="text-[10px] font-mono text-amber-500">{vizBpm} BPM</span>
+                    </div>
+                    <div className={`w-2 h-2 rounded-full bg-emerald-500 animate-pulse`} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                  {/* VISUALIZER CANVAS */}
+                  <div className="lg:col-span-3 aspect-video bg-black rounded-sm border border-white/5 relative overflow-hidden group">
+                    <canvas ref={canvasRef} className="w-full h-full" />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)] pointer-events-none" />
+                    
+                    {/* HUD Overlay */}
+                    <div className="absolute bottom-4 left-4 flex gap-4 pointer-events-none opacity-40 group-hover:opacity-100 transition-opacity">
+                      <div className="text-[7px] font-mono text-white/60">LAYER: 0x82<br/>STABILITY: HIGH</div>
+                      <div className="text-[7px] font-mono text-white/60">GEOM: {vizPattern.toUpperCase()}<br/>SIGNAL: 44.1kHz</div>
+                    </div>
+                  </div>
+
+                  {/* CONTROL DECK */}
+                  <div className="space-y-6">
+                    <div>
+                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-4">Sync Modulator (BPM)</span>
+                      <input 
+                        type="range" min="130" max="180" value={vizBpm} 
+                        onChange={(e) => setVizBpm(parseInt(e.target.value))}
+                        className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#00D4FF]" 
+                      />
+                      <div className="flex justify-between mt-2 font-mono text-[8px] text-slate-600">
+                        <span>130</span>
+                        <span>180</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Phase Patterns</span>
+                      {[
+                        { id: 'neural', label: 'Neural Pulse', icon: Activity },
+                        { id: 'geometric', label: 'Cyber Grid', icon: LayoutGrid },
+                        { id: 'flow', label: 'High Flow', icon: Zap }
+                      ].map(p => (
+                        <button 
+                          key={p.id}
+                          onClick={() => setVizPattern(p.id)}
+                          className={`w-full flex items-center justify-between p-3 border transition-all ${vizPattern === p.id ? 'bg-[#00D4FF]/10 border-[#00D4FF] text-white' : 'bg-white/[0.02] border-white/5 text-slate-500 hover:border-white/20'}`}
+                        >
+                          <span className="text-[10px] font-black uppercase tracking-widest">{p.label}</span>
+                          <p.icon className="w-3 h-3" />
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="space-y-3">
+                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Chromatic Tuning</span>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['#00D4FF', '#FF0055', '#A855F7', '#10B981'].map(c => (
+                          <button 
+                            key={c}
+                            onClick={() => setVizColor(c)}
+                            className={`aspect-square rounded-sm border-2 transition-all ${vizColor === c ? 'border-white scale-110' : 'border-transparent opacity-40 hover:opacity-100'}`}
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="h-full flex items-center justify-center opacity-20 flex-col space-y-4">
                  <LayoutGrid className="w-12 h-12" />
@@ -571,6 +895,7 @@ export default function App() {
             { id: 'vision', icon: Monitor, label: 'Aether Link' },
             { id: 'codex', icon: BookOpen, label: 'Codex' },
             { id: 'nodes', icon: Layers, label: 'Clusters' },
+            { id: 'aether', icon: Wifi, label: 'Aether' },
             { id: 'map', icon: MapPin, label: 'GeoGrid' }
           ].map(t => (
             <button 
