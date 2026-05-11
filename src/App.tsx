@@ -7,6 +7,7 @@ import {
   Lock, Wifi, Globe, Command, ChevronRight, Binary, Download, Package, 
   Settings, User, MapPin, TrendingUp, Info, LayoutGrid, Moon, Music, Target
 } from 'lucide-react';
+import { startGalactusLoop } from './services/galactus-loop';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -228,6 +229,7 @@ export default function App() {
 
   useEffect(() => {
     testConnection();
+    startGalactusLoop();
     const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
     const glitchTimer = setInterval(() => {
       if (Math.random() > 0.95) {
