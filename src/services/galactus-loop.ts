@@ -1,31 +1,30 @@
+// src/services/galactus-loop.ts
 import { galactusOrchestrator } from './galactus-orchestrator';
 import { paralegalService } from './paralegal-service';
 import { jarvisBridge } from './jarvis-bridge';
 
 export const startGalactusLoop = async () => {
-  try {
-    console.log("🚀 Starting Galactus Self-Sustaining Cycle...");
+  console.log("🚀 Galactus Loop Initializing...");
 
-    const state = await galactusOrchestrator.initiate({
-      cycleId: `cycle-${Date.now()}`,
-      failSafeLevel: 'full'
-    });
+  // Galactus Protocol Initiation
+  const state = await galactusOrchestrator.initiate({
+    cycleId: `cycle-${Date.now()}`,
+    archivesLoaded: true,
+    failSafeLevel: 'full'
+  });
 
-    const repoReport = await paralegalService.runMaintenance([
-      'emergence', 'Ambient', 'tonysfart', 'The-Paralegal-', 'Nexus', 'Hefboom'
-    ]);
+  // Step 1: Paralegal Repo Maintenance
+  const repoReport = await paralegalService.runMaintenance([
+    'emergence', 'Ambient', 'tonysfart', 'The-Paralegal-', 'Nexus'
+  ]);
 
-    await jarvisBridge.reportStatus({
-      cycleId: state.cycleId,
-      galactusStatus: state.status,
-      repoHealth: repoReport
-    });
+  // Step 2: Jarvis Reporting
+  await jarvisBridge.reportStatus({
+    cycleId: state.cycleId,
+    repoHealth: repoReport,
+    galactusDirective: state.nextAction
+  });
 
-    console.log("✅ Cycle completed successfully.");
-  } catch (error) {
-    console.error("❌ Galactus Cycle Error (Fail-safe engaged):", error);
-  }
-
-  // Next cycle
-  setTimeout(startGalactusLoop, 1000 * 60 * 45); // Every 45 minutes
+  // Schedule next cycle
+  setTimeout(startGalactusLoop, 1000 * 60 * 30); // Every 30 minutes (adjustable)
 };
