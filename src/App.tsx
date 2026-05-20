@@ -753,6 +753,31 @@ export default function App() {
                     <div className="h-full bg-emerald-500 w-[0.09%]" />
                   </div>
                 </div>
+
+                {/* GALACTUS ORCHESTRATION STATUS */}
+                <div className="border border-[#00D4FF]/20 bg-black/40 p-6 relative overflow-hidden">
+                   <div className="absolute top-0 right-0 p-2 opacity-10">
+                      <Lock className="w-24 h-24 text-[#00D4FF]" />
+                   </div>
+                   <div className="flex items-center gap-3 border-b border-white/5 pb-4 mb-4 relative z-10">
+                      <Music className="w-4 h-4 text-emerald-500" />
+                      <span className="text-[9px] font-black uppercase tracking-[0.5em] text-white">Galactus Integration: Active</span>
+                   </div>
+                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 relative z-10">
+                      <div className="p-4 bg-white/[0.02]">
+                         <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest block mb-2">Sovereignty Gate</span>
+                         <span className="text-xs font-mono text-emerald-500">PENDING_SIGNATURE LIVE</span>
+                      </div>
+                      <div className="p-4 bg-white/[0.02]">
+                         <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest block mb-2">Paralegal Sync</span>
+                         <span className="text-xs font-mono text-white">LOCKED (30m cycle)</span>
+                      </div>
+                      <div className="p-4 bg-white/[0.02]">
+                         <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest block mb-2">Ingestion Pipeline</span>
+                         <span className="text-xs font-mono text-[#00D4FF]">SOUNDCLOUD_ACTIVE</span>
+                      </div>
+                   </div>
+                </div>
               </div>
             ) : activeTab === 'nodes' ? (
               <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-500 pb-20">
