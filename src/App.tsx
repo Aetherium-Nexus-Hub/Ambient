@@ -5,8 +5,10 @@ import {
   Dna, Cpu, AlertTriangle, RefreshCcw, ArrowRight, Send, CheckCircle2,
   Crosshair, Disc, Radio, Box, Clock, Youtube, ExternalLink, Play, Users, Eye,
   Lock, Wifi, Globe, Command, ChevronRight, Binary, Download, Package, 
-  Settings, User, MapPin, TrendingUp, Info, LayoutGrid, Moon, Music, Target
+  Settings, User, MapPin, TrendingUp, Info, LayoutGrid, Moon, Music, Target,
+  Cloud, HardDrive, Trash2, FileText, Upload, Brain
 } from 'lucide-react';
+import AiLibraryView from './components/AiLibraryView';
 import { startGalactusLoop } from './services/galactus-loop';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -95,6 +97,31 @@ export default function App() {
   const [isGlitching, setIsGlitching] = useState(false);
   const [isAiTyping, setIsAiTyping] = useState(false);
   
+  // Google Drive State
+  const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [driveFiles, setDriveFiles] = useState<any[]>([]);
+  const [isFetchingDrive, setIsFetchingDrive] = useState(false);
+  const [isUploadingDrive, setIsUploadingDrive] = useState(false);
+  const [driveStatusMessage, setDriveStatusMessage] = useState<string | null>(null);
+  const [showAllDriveFiles, setShowAllDriveFiles] = useState(false);
+  const [driveNoteTitle, setDriveNoteTitle] = useState('Ambient_OS_Log');
+  const [driveNoteText, setDriveNoteText] = useState('');
+
+  // Set Planner Tracks State
+  const [plannerTracks, setPlannerTracks] = useState<any[]>([
+    { id: "t1", title: "Cybernetic Pulse", artist: "Observx", bpm: 128, key: "8A", transition: "Bass Swap" },
+    { id: "t2", title: "Neon Grime", artist: "Unknown Code", bpm: 130, key: "8A", transition: "Echo Fade" },
+    { id: "t3", title: "Atmospheric Pressure", artist: "Klang", bpm: 135, key: "9A", transition: "High Pass Filter" },
+    { id: "t4", title: "Terminal Velocity", artist: "System Override", bpm: 145, key: "9B", transition: "Direct Cut" }
+  ]);
+
+  // Set Planner Row Editors State
+  const [plannerTitleInput, setPlannerTitleInput] = useState('');
+  const [plannerArtistInput, setPlannerArtistInput] = useState('');
+  const [plannerBpmInput, setPlannerBpmInput] = useState(130);
+  const [plannerKeyInput, setPlannerKeyInput] = useState('8A');
+  const [plannerTransitionInput, setPlannerTransitionInput] = useState('Fade');
+
   // Extraction State
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractProgress, setExtractProgress] = useState(0);
@@ -116,6 +143,7 @@ export default function App() {
   const [vizBpm, setVizBpm] = useState(145);
   const [vizColor, setVizColor] = useState('#00D4FF');
   const [vizPattern, setVizPattern] = useState('neural'); // neural, geometric, flow
+  const [codexSortBy, setCodexSortBy] = useState<'bpm_asc' | 'bpm_desc' | 'key_asc' | 'key_desc'>('bpm_desc');
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -249,8 +277,13 @@ export default function App() {
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/drive');
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setDriveToken(credential.accessToken);
+      }
     } catch (e) {
       console.error("Login Failure:", e);
     }
@@ -259,8 +292,199 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      setDriveToken(null);
     } catch (e) {
       console.error("Logout Failure:", e);
+    }
+  };
+
+  const handleConnectDrive = async () => {
+    const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/drive');
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setDriveToken(credential.accessToken);
+        setDriveStatusMessage("OAUTH Bridge Secured - Connection Active.");
+        fetchDriveFiles(credential.accessToken);
+      } else {
+        throw new Error("No Access Token Returned");
+      }
+    } catch (e) {
+      console.error("Drive Authorization Error:", e);
+      setDriveStatusMessage("Drive authorization failed. Link rejected.");
+    }
+  };
+
+  const fetchDriveFiles = async (token = driveToken) => {
+    if (!token) return;
+    setIsFetchingDrive(true);
+    setDriveStatusMessage("Syncing cloud metadata...");
+    try {
+      // Query criteria
+      const queryParam = showAllDriveFiles 
+        ? encodeURIComponent("trashed = false")
+        : encodeURIComponent("name contains 'Ambient_OS_' and trashed = false");
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${queryParam}&orderBy=modifiedTime desc`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Drive response error");
+      const data = await res.json();
+      setDriveFiles(data.files || []);
+      setDriveStatusMessage(null);
+    } catch (e) {
+      console.error("Fetch Drive Files Error:", e);
+      setDriveStatusMessage("Offline state or invalid token context.");
+    } finally {
+      setIsFetchingDrive(false);
+    }
+  };
+
+  useEffect(() => {
+    if (driveToken && activeTab === 'drive') {
+      fetchDriveFiles(driveToken);
+    }
+  }, [driveToken, activeTab, showAllDriveFiles]);
+
+  const savePlanToDrive = async (filename: string) => {
+    if (!driveToken) {
+      setDriveStatusMessage("Google Drive access token missing.");
+      return;
+    }
+    setIsUploadingDrive(true);
+    setDriveStatusMessage(`Syncing list [${filename}]...`);
+    try {
+      const name = filename.endsWith('.json') ? filename : `${filename}.json`;
+      const metadata = { name, mimeType: 'application/json' };
+      const fileContent = JSON.stringify({
+        appId,
+        timestamp: Date.now(),
+        type: 'set_plan',
+        tracks: plannerTracks,
+        avgBpm: Math.round(plannerTracks.reduce((acc, curr) => acc + (curr.bpm || 0), 0) / (plannerTracks.length || 1))
+      }, null, 2);
+
+      const boundary = 'gdrive_upload_boundary_ambient';
+      const delimiter = `\r\n--${boundary}\r\n`;
+      const closeDelimiter = `\r\n--${boundary}--`;
+
+      const body = 
+        delimiter +
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+        JSON.stringify(metadata) +
+        delimiter +
+        'Content-Type: application/json\r\n\r\n' +
+        fileContent +
+        closeDelimiter;
+
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${driveToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`
+        },
+        body
+      });
+
+      if (!res.ok) throw new Error("Multipart raw write failed");
+      setDriveStatusMessage("Set Plan successfully backed up to Google Drive!");
+      fetchDriveFiles(driveToken);
+    } catch (e) {
+      console.error(e);
+      setDriveStatusMessage("Failed to backup plan to Google Drive.");
+    } finally {
+      setIsUploadingDrive(false);
+    }
+  };
+
+  const uploadCustomNote = async () => {
+    if (!driveToken) {
+      setDriveStatusMessage("Google Drive access token missing.");
+      return;
+    }
+    if (!driveNoteText.trim()) {
+      alert("Note content empty.");
+      return;
+    }
+    setIsUploadingDrive(true);
+    setDriveStatusMessage(`Uploading log [${driveNoteTitle}]...`);
+    try {
+      const name = driveNoteTitle.endsWith('.txt') ? driveNoteTitle : `${driveNoteTitle}.txt`;
+      const metadata = { name, mimeType: 'text/plain' };
+
+      const boundary = 'gdrive_upload_boundary_ambient';
+      const delimiter = `\r\n--${boundary}\r\n`;
+      const closeDelimiter = `\r\n--${boundary}--`;
+
+      const body = 
+        delimiter +
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+        JSON.stringify(metadata) +
+        delimiter +
+        'Content-Type: text/plain\r\n\r\n' +
+        driveNoteText +
+        closeDelimiter;
+
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${driveToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`
+        },
+        body
+      });
+
+      if (!res.ok) throw new Error("Note upload failed");
+      setDriveStatusMessage("Personal note saved securely to Drive!");
+      setDriveNoteText('');
+      fetchDriveFiles(driveToken);
+    } catch (e) {
+      console.error(e);
+      setDriveStatusMessage("Failed to upload note to Google Drive.");
+    } finally {
+      setIsUploadingDrive(false);
+    }
+  };
+
+  const loadPlanFromDrive = async (fileId: string) => {
+    if (!driveToken) return;
+    setDriveStatusMessage("Fetching sequence file...");
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { Authorization: `Bearer ${driveToken}` }
+      });
+      if (!res.ok) throw new Error("Alt media fetch rejected");
+      const data = await res.json();
+      if (data && Array.isArray(data.tracks)) {
+        setPlannerTracks(data.tracks);
+        setDriveStatusMessage("Sequence loaded and synchronized with central console.");
+        setActiveTab('set_planner');
+      } else {
+        throw new Error("Data schema incompatible");
+      }
+    } catch (e) {
+      console.error(e);
+      setDriveStatusMessage("Failed to decode Plan content (non-compatible JSON).");
+    }
+  };
+
+  const deleteDriveFile = async (fileId: string, filename: string) => {
+    const confirmed = window.confirm(`Confirm destructive pipeline: Delete [${filename}] from Google Drive? This action cannot be undone.`);
+    if (!confirmed) return;
+    if (!driveToken) return;
+    setDriveStatusMessage(`Deleting [${filename}]...`);
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${driveToken}` }
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      setDriveStatusMessage("File purged successfully.");
+      fetchDriveFiles(driveToken);
+    } catch (e) {
+      console.error(e);
+      setDriveStatusMessage("Drive delete request failed.");
     }
   };
 
@@ -695,29 +919,63 @@ export default function App() {
                 </div>
 
                 <div className="space-y-6">
-                  <div className="flex items-center gap-3 border-b border-white/5 pb-2">
-                    <Disc className="w-4 h-4 text-emerald-500" />
-                    <span className="text-[9px] font-black uppercase tracking-[0.3em] text-white">Recommended Extractions // Track Selection</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/5 pb-2 gap-4">
+                    <div className="flex items-center gap-3">
+                      <Disc className="w-4 h-4 text-emerald-500" />
+                      <span className="text-[9px] font-black uppercase tracking-[0.3em] text-white">Recommended Extractions // Track Selection</span>
+                    </div>
+
+                    {/* DYNAMIC SORT DROPDOWN */}
+                    <div className="flex items-center gap-2 bg-[#040608] border border-white/10 px-2.5 py-1 rounded-sm">
+                      <span className="text-[7.5px] font-black uppercase text-slate-500 tracking-wider">Sort Extractions:</span>
+                      <select
+                        value={codexSortBy}
+                        onChange={(e: any) => setCodexSortBy(e.target.value)}
+                        className="bg-transparent text-[8.5px] font-mono text-[#00D4FF] focus:outline-none focus:ring-0 border-none cursor-pointer uppercase font-bold"
+                      >
+                        <option value="bpm_desc" className="bg-slate-950 text-white">BPM (148 ↓ 138)</option>
+                        <option value="bpm_asc" className="bg-slate-950 text-white">BPM (138 ↑ 148)</option>
+                        <option value="key_asc" className="bg-slate-950 text-white">Key (A - Z)</option>
+                        <option value="key_desc" className="bg-slate-950 text-white">Key (Z - A)</option>
+                      </select>
+                    </div>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {[
-                      { artist: "Sensient", track: "The Deep", district: "Melbourne Underground", type: "Zenith Void" },
-                      { artist: "Grouch", track: "Darkness", district: "Forest Clusters", type: "Kinetic Occult" },
-                      { artist: "Merkaba", track: "Forbidden Knowledge", district: "Ancient Temples", type: "Chrono-Phantasm" },
-                      { artist: "Tetrameth", track: "Primal", district: "Organic Nodes", type: "Zenith Void" },
-                    ].map((t, i) => (
+                    {(() => {
+                      const codexTracks = [
+                        { artist: "Sensient", track: "The Deep", district: "Melbourne Underground", type: "Zenith Void", bpm: 138, key: "11B" },
+                        { artist: "Grouch", track: "Darkness", district: "Forest Clusters", type: "Kinetic Occult", bpm: 145, key: "11A" },
+                        { artist: "Merkaba", track: "Forbidden Knowledge", district: "Ancient Temples", type: "Chrono-Phantasm", bpm: 148, key: "10A" },
+                        { artist: "Tetrameth", track: "Primal", district: "Organic Nodes", type: "Zenith Void", bpm: 140, key: "9A" },
+                        { artist: "Shadow FX", track: "Direct Drive", district: "System Subsystem", type: "Kinetic Occult", bpm: 142, key: "12A" },
+                        { artist: "Terrafractyl", track: "Electronic Evolution", district: "Melbourne Labs", type: "Chrono-Phantasm", bpm: 146, key: "5A" },
+                      ];
+
+                      return [...codexTracks].sort((a, b) => {
+                        if (codexSortBy === 'bpm_asc') return a.bpm - b.bpm;
+                        if (codexSortBy === 'bpm_desc') return b.bpm - a.bpm;
+                        if (codexSortBy === 'key_asc') return a.key.localeCompare(b.key);
+                        if (codexSortBy === 'key_desc') return b.key.localeCompare(a.key);
+                        return 0;
+                      });
+                    })().map((t, i) => (
                       <div key={i} className={`flex items-center gap-6 p-4 bg-white/[0.02] border border-white/5 hover:bg-[#00D4FF]/5 transition-all ${clickableStyle}`}>
-                        <div className="w-12 h-12 flex items-center justify-center bg-black border border-white/10 shrink-0">
-                          <Play className="w-4 h-4 text-slate-600" />
+                        <div className="w-12 h-12 flex items-center justify-center bg-black border border-white/10 shrink-0 relative group">
+                          <div className="absolute inset-0.5 bg-[#00D4FF]/5 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <Play className="w-4 h-4 text-slate-600 relative z-10 hover:text-[#00D4FF] transition-colors" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest">{t.artist}</p>
-                          <p className="text-sm font-mono text-white truncate">{t.track}</p>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-[7.5px] font-black text-slate-500 uppercase tracking-widest">{t.artist}</span>
+                            <span className="text-[7px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1 py-[1px] rounded-[2px]">{t.bpm} BPM</span>
+                            <span className="text-[7px] font-mono text-[#00D4FF] font-bold bg-[#00D4FF]/10 px-1 py-[1px] rounded-[2px]">{t.key}</span>
+                          </div>
+                          <p className="text-sm font-semibold text-white tracking-wide truncate">{t.track}</p>
                         </div>
                         <div className="text-right hidden sm:block">
-                          <p className="text-[7px] font-mono text-[#00D4FF]/40 uppercase tracking-tighter">{t.district}</p>
-                          <p className="text-[8px] font-black text-slate-700 uppercase">{t.type}</p>
+                          <p className="text-[7px] font-mono text-slate-500/80 uppercase tracking-tighter">{t.district}</p>
+                          <p className="text-[8px] font-black text-slate-700 uppercase tracking-wide mt-0.5">{t.type}</p>
                         </div>
                       </div>
                     ))}
@@ -856,6 +1114,327 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            ) : activeTab === 'set_planner' ? (
+              <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-500 pb-20">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#00D4FF]/20 pb-6 gap-4">
+                  <div className="flex items-center gap-4">
+                    <Disc className="w-6 h-6 text-fuchsia-500" />
+                    <h2 className="text-xl font-black uppercase tracking-[0.4em] text-white">Set Planner // Sequence Grid</h2>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                     <span className="text-[10px] font-mono text-fuchsia-500 border border-fuchsia-500/20 px-3 py-1 bg-fuchsia-500/10">
+                        Tracks: {plannerTracks.length} // Avg BPM: {Math.round(plannerTracks.reduce((sum, t) => sum + (Number(t.bpm) || 0), 0) / (plannerTracks.length || 1))}
+                     </span>
+                     
+                     {/* Backup Set Plan to Google Drive */}
+                     {user && driveToken ? (
+                       <button
+                         onClick={() => {
+                           const filename = prompt("Enter filename for Google Drive backup:", `Ambient_OS_Set_Plan_${new Date().toISOString().split('T')[0]}`);
+                           if (filename) savePlanToDrive(filename);
+                         }}
+                         className={`text-[9px] font-mono font-bold bg-[#00D4FF]/20 text-[#00D4FF] hover:bg-[#00D4FF] hover:text-black border border-[#00D4FF]/40 px-3 py-1.5 uppercase tracking-widest ${clickableStyle}`}
+                       >
+                         Backup to GDrive
+                       </button>
+                     ) : (
+                       <button
+                         onClick={handleConnectDrive}
+                         className={`text-[8px] font-mono bg-white/5 hover:bg-[#00D4FF]/20 border border-white/10 text-white hover:text-[#00D4FF] px-3 py-1.5 uppercase tracking-widest ${clickableStyle} animate-pulse`}
+                       >
+                         Authorize GDrive Gasket
+                       </button>
+                     )}
+                  </div>
+                </div>
+
+                {driveStatusMessage && (
+                  <div className="bg-black border border-amber-500/30 text-amber-500 p-4 font-mono text-xs flex justify-between items-center rounded-sm">
+                    <span>⚡ COHERENCE FEEDBACK: {driveStatusMessage}</span>
+                    <button onClick={() => setDriveStatusMessage(null)} className="text-[10px] hover:text-white underline">Acknowledge</button>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                   {plannerTracks.map((track, i) => (
+                     <div key={track.id || i} className="group relative flex flex-col md:flex-row items-center border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] p-4 transition-all hover:border-[#00D4FF]/30 gap-6">
+                        <div className="font-mono text-xs text-slate-600 w-8">0{i+1}</div>
+                        <div className="flex-1 space-y-1 text-center md:text-left">
+                           <div className="text-sm font-bold text-white uppercase tracking-wider">{track.title}</div>
+                           <div className="text-[10px] text-slate-500 font-mono">{track.artist}</div>
+                        </div>
+                        <div className="flex items-center gap-8 text-[10px] uppercase font-black tracking-widest text-slate-400">
+                           <div className="flex flex-col items-center md:items-start gap-1">
+                              <span className="text-[8px] text-slate-600">BPM</span>
+                              <span className="text-emerald-400 font-mono text-xs">{track.bpm}</span>
+                           </div>
+                           <div className="flex flex-col items-center md:items-start gap-1">
+                              <span className="text-[8px] text-slate-600">KEY</span>
+                              <span className="text-amber-400 font-mono text-xs">{track.key}</span>
+                           </div>
+                           <div className="hidden md:flex flex-col items-end gap-1 w-32 border-l border-white/10 pl-4 pr-4">
+                              <span className="text-[8px] text-slate-600">Transition Out</span>
+                              <span className="text-[#00D4FF] text-right font-mono text-[9px] mt-0.5">{track.transition}</span>
+                           </div>
+                           
+                           {/* Trash single track option */}
+                           <button 
+                             onClick={() => {
+                               setPlannerTracks(prev => prev.filter(t => t.id !== track.id));
+                             }}
+                             className={`p-2 bg-red-500/10 hover:bg-red-500 hover:text-white transition-colors border border-red-500/20 text-red-500 rounded ${clickableStyle}`}
+                           >
+                              <Trash2 className="w-3.5 h-3.5" />
+                           </button>
+                        </div>
+                     </div>
+                   ))}
+                </div>
+
+                {/* Adding new audio sequence segment builder */}
+                <div className="border border-white/5 bg-black/40 p-6 space-y-4">
+                   <h3 className="text-xs font-black uppercase text-[#00D4FF] tracking-[0.2em] border-b border-white/5 pb-2">Initialize Audio Sequence</h3>
+                   <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[8px] font-black text-slate-500 uppercase">Track Title</label>
+                        <input 
+                          type="text" 
+                          placeholder="Void Resonance" 
+                          value={plannerTitleInput}
+                          onChange={e => setPlannerTitleInput(e.target.value)}
+                          className="w-full bg-black border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#00D4FF]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[8px] font-black text-slate-500 uppercase">Artist Signature</label>
+                        <input 
+                          type="text" 
+                          placeholder="Artist Name" 
+                          value={plannerArtistInput}
+                          onChange={e => setPlannerArtistInput(e.target.value)}
+                          className="w-full bg-black border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#00D4FF]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[8px] font-black text-slate-500 uppercase">Modulator (BPM)</label>
+                        <input 
+                          type="number" 
+                          value={plannerBpmInput}
+                          onChange={e => setPlannerBpmInput(Number(e.target.value))}
+                          className="w-full bg-black border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#00D4FF]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[8px] font-black text-slate-500 uppercase">Harmonic Key</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. 8A" 
+                          value={plannerKeyInput}
+                          onChange={e => setPlannerKeyInput(e.target.value)}
+                          className="w-full bg-black border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#00D4FF]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[8px] font-black text-slate-500 uppercase">Transition Exit</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Echo Filter" 
+                          value={plannerTransitionInput}
+                          onChange={e => setPlannerTransitionInput(e.target.value)}
+                          className="w-full bg-black border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#00D4FF]"
+                        />
+                      </div>
+                   </div>
+                   <button 
+                     onClick={() => {
+                       if (!plannerTitleInput.trim() || !plannerArtistInput.trim()) {
+                         alert("Track title and artist signature inputs are required.");
+                         return;
+                       }
+                       const newTrack = {
+                         id: `tCustom_${Date.now()}`,
+                         title: plannerTitleInput,
+                         artist: plannerArtistInput,
+                         bpm: plannerBpmInput,
+                         key: plannerKeyInput,
+                         transition: plannerTransitionInput
+                       };
+                       setPlannerTracks(prev => [...prev, newTrack]);
+                       setPlannerTitleInput('');
+                       setPlannerArtistInput('');
+                     }}
+                     className={`w-full py-3 bg-[#00D4FF]/10 text-[#00D4FF] border border-[#00D4FF]/30 font-black text-xs uppercase tracking-[0.2em] hover:bg-[#00D4FF] hover:text-black transition-all ${clickableStyle}`}
+                   >
+                     Commit Dynamic Sequence to Grid
+                   </button>
+                </div>
+              </div>
+            ) : activeTab === 'drive' ? (
+              <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-500 pb-20">
+                {/* Header card */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#00D4FF]/20 pb-6 gap-4">
+                  <div className="flex items-center gap-4">
+                    <Cloud className="w-6 h-6 text-[#00D4FF]" />
+                    <h2 className="text-xl font-black uppercase tracking-[0.4em] text-white">Google Drive Bridge // Telemetry Center</h2>
+                  </div>
+                  <div className="flex items-center gap-3">
+                     <span className="text-[10px] font-mono text-emerald-400 border border-emerald-500/20 px-3 py-1 bg-emerald-500/10">
+                        {driveToken ? "STATUS: AUTHORIZED" : "STATUS: UNAUTHORIZED"}
+                     </span>
+                  </div>
+                </div>
+
+                {driveStatusMessage && (
+                  <div className="bg-black border border-amber-500/30 text-amber-500 p-4 font-mono text-xs flex justify-between items-center rounded-sm">
+                    <span>⚡ SYSTEM FEEDBACK: {driveStatusMessage}</span>
+                    <button onClick={() => setDriveStatusMessage(null)} className="text-[10px] hover:text-white underline">Acknowledge</button>
+                  </div>
+                )}
+
+                {/* Authentication card */}
+                <div className="p-6 border border-[#00D4FF]/20 bg-black/50 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-2 opacity-5">
+                    <HardDrive className="w-32 h-32 text-[#00D4FF]" />
+                  </div>
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-bold text-white uppercase tracking-wider">Secure OAuth Link</h3>
+                      <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
+                        Authorize Ambient OS to interact with your Google Drive. This enables full persistence synchronization to save sound sequences, structural logs, and active local vaults.
+                      </p>
+                    </div>
+                    {driveToken ? (
+                      <div className="flex flex-col sm:flex-row gap-3">
+                         <button
+                           onClick={() => fetchDriveFiles(driveToken)}
+                           className={`py-2 px-4 bg-[#00D4FF]/10 text-[#00D4FF] hover:bg-[#00D4FF] hover:text-black border border-[#00D4FF]/30 font-mono text-[10px] font-bold uppercase tracking-wider rounded ${clickableStyle}`}
+                         >
+                           Refetch GDrive Files
+                         </button>
+                         <button
+                           onClick={() => setDriveToken(null)}
+                           className={`py-2 px-4 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/30 font-mono text-[10px] font-bold uppercase tracking-wider rounded ${clickableStyle}`}
+                         >
+                           Sever GDrive Link
+                         </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleConnectDrive}
+                        className={`py-3 px-6 bg-[#00D4FF] hover:bg-white text-black font-black text-xs uppercase tracking-widest flex items-center gap-3 rounded ${clickableStyle}`}
+                      >
+                        <Shield className="w-4 h-4" />
+                        Establish GDrive Bridge
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {driveToken && (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                     {/* Explorer Col */}
+                     <div className="lg:col-span-2 space-y-4">
+                        <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                           <span className="text-[10px] font-black uppercase text-white tracking-widest">Ambient File Scanner</span>
+                           <label className="flex items-center gap-2 cursor-pointer text-xs font-mono select-none text-slate-400">
+                             <input 
+                               type="checkbox" 
+                               checked={showAllDriveFiles} 
+                               onChange={e => setShowAllDriveFiles(e.target.checked)}
+                               className="accent-[#00D4FF] cursor-pointer"
+                             />
+                             <span>Show All Drive Files</span>
+                           </label>
+                        </div>
+
+                        {isFetchingDrive ? (
+                           <div className="p-12 border border-white/5 bg-white/[0.01] text-center font-mono text-xs text-slate-500 animate-pulse">
+                              Scuba scanning Google Drive sectors...
+                           </div>
+                        ) : driveFiles.length === 0 ? (
+                           <div className="p-12 border border-dashed border-white/10 text-center font-mono text-xs text-slate-500">
+                              No compatible telemetry files located. Add sequences and click backing up.
+                           </div>
+                        ) : (
+                           <div className="space-y-3 max-h-[400px] overflow-y-auto no-scrollbar pr-1">
+                              {driveFiles.map(file => {
+                                const isJson = file.name.endsWith('.json');
+                                return (
+                                 <div key={file.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-white/[0.02] border border-white/5 hover:border-[#00D4FF]/20 hover:bg-white/[0.03] transition-all gap-4">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                       <FileText className="w-4 h-4 text-amber-500 shrink-0" />
+                                       <div className="min-w-0">
+                                          <p className="text-xs font-mono text-white truncate max-w-sm">{file.name}</p>
+                                          <p className="text-[7px] text-slate-500 font-mono uppercase mt-0.5">File ID: {file.id.substring(0, 15)}...</p>
+                                       </div>
+                                    </div>
+                                    <div className="flex gap-2 self-end sm:self-auto">
+                                       {isJson && (
+                                         <button 
+                                           onClick={() => loadPlanFromDrive(file.id)}
+                                           className={`text-[8px] font-mono py-1 px-2.5 bg-[#00D4FF]/10 text-[#00D4FF] hover:bg-[#00D4FF] hover:text-black border border-[#00D4FF]/30 font-bold uppercase ${clickableStyle}`}
+                                         >
+                                            Load to App
+                                         </button>
+                                       )}
+                                       <button 
+                                         onClick={() => deleteDriveFile(file.id, file.name)}
+                                         className={`text-[8px] font-mono py-1 px-2.5 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/30 font-bold uppercase ${clickableStyle}`}
+                                       >
+                                          Delete
+                                       </button>
+                                    </div>
+                                 </div>
+                                );
+                              })}
+                           </div>
+                        )}
+                     </div>
+
+                     {/* Upload Custom Log Column */}
+                     <div className="space-y-4">
+                        <span className="text-[10px] font-black uppercase text-white tracking-widest block border-b border-white/5 pb-2">Save Direct Telemetry</span>
+                        <div className="p-4 border border-white/5 bg-black/20 space-y-4">
+                           <div className="space-y-1.5">
+                              <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Filename Title</label>
+                              <input 
+                                type="text" 
+                                value={driveNoteTitle}
+                                onChange={e => setDriveNoteTitle(e.target.value)}
+                                className="w-full bg-black border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#00D4FF]"
+                              />
+                           </div>
+                           <div className="space-y-1.5">
+                              <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Telemetric Logs / Observations</label>
+                              <textarea 
+                                rows={4}
+                                placeholder="Structure custom sound structures or system signals here..."
+                                value={driveNoteText}
+                                onChange={e => setDriveNoteText(e.target.value)}
+                                className="w-full bg-black border border-white/10 p-2 text-xs text-white focus:outline-none focus:border-[#00D4FF] resize-none"
+                              />
+                           </div>
+                           <button 
+                             onClick={uploadCustomNote}
+                             disabled={isUploadingDrive}
+                             className={`w-full py-2.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black border border-emerald-500/20 font-black text-[10px] uppercase tracking-widest ${clickableStyle}`}
+                           >
+                             {isUploadingDrive ? "Uploading..." : "Write File to GDrive"}
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+                )}
+              </div>
+            ) : activeTab === 'ai_library' ? (
+              <AiLibraryView 
+                user={user}
+                db={db}
+                appId={appId}
+                vaultItems={vaultItems}
+                plannerTracks={plannerTracks}
+                clickableStyle={clickableStyle}
+              />
             ) : (
               <div className="h-full flex items-center justify-center opacity-20 flex-col space-y-4">
                  <LayoutGrid className="w-12 h-12" />
@@ -885,12 +1464,49 @@ export default function App() {
 
         {/* RIGHT SIDEBAR: Local Vault */}
         <aside className="w-16 lg:w-72 border-l border-[#00D4FF]/10 flex flex-col bg-black/20">
-           <div className="p-4 border-b border-white/5 flex items-center justify-between">
-              <div className="flex items-center gap-3 overflow-hidden">
-                 <Database className="w-4 h-4 text-[#00D4FF] shrink-0" />
-                 <span className="text-[9px] font-black uppercase tracking-widest hidden lg:block whitespace-nowrap">Local Vault</span>
+           <div className="p-4 border-b border-white/5 flex flex-col gap-2">
+              <div className="flex items-center justify-between col-span-2">
+                 <div className="flex items-center gap-3 overflow-hidden">
+                    <Database className="w-4 h-4 text-[#00D4FF] shrink-0" />
+                    <span className="text-[9px] font-black uppercase tracking-widest hidden lg:block whitespace-nowrap">Local Vault</span>
+                 </div>
+                 <span className="text-[8px] font-mono text-slate-600 hidden lg:block">{vaultItems.length} SEC</span>
               </div>
-              <span className="text-[8px] font-mono text-slate-600 hidden lg:block">{vaultItems.length} SEC</span>
+              
+              {/* Sidebar Backup to GDrive */}
+              {user && driveToken && vaultItems.length > 0 && (
+                <button 
+                  onClick={async () => {
+                    setIsUploadingDrive(true);
+                    setDriveStatusMessage("Backing up Vault to Cloud Drive...");
+                    try {
+                      const metadata = { name: `Ambient_OS_Vault_Backup_${new Date().toISOString().split('T')[0]}.json`, mimeType: 'application/json' };
+                      const fileContent = JSON.stringify({ appId, type: 'vault_backup', timestamp: Date.now(), items: vaultItems }, null, 2);
+                      const boundary = 'gdrive_upload_boundary_ambient';
+                      const delimiter = `\r\n--${boundary}\r\n`;
+                      const closeDelimiter = `\r\n--${boundary}--`;
+                      const body = delimiter + 'Content-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(metadata) + delimiter + 'Content-Type: application/json\r\n\r\n' + fileContent + closeDelimiter;
+                      
+                      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${driveToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+                        body
+                      });
+                      if (!res.ok) throw new Error("Vault backup write failed");
+                      setDriveStatusMessage("Local Vault backup uploaded to Google Drive!");
+                      fetchDriveFiles(driveToken);
+                    } catch (e) {
+                      console.error(e);
+                      setDriveStatusMessage("Failed to write Vault backup.");
+                    } finally {
+                      setIsUploadingDrive(false);
+                    }
+                  }}
+                  className={`text-[8px] font-mono py-1.5 px-2 bg-emerald-500/10 hover:bg-emerald-500 hover:text-black transition-all border border-emerald-500/30 text-emerald-400 font-bold uppercase tracking-widest block text-center ${clickableStyle}`}
+                >
+                  Backup Vault to Drive
+                </button>
+              )}
            </div>
            
            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 lg:p-4 space-y-3">
@@ -920,10 +1536,12 @@ export default function App() {
           {[
             { id: 'chat', icon: MessageSquare, label: 'Telemetry' },
             { id: 'vision', icon: Monitor, label: 'Aether Link' },
+            { id: 'ai_library', icon: Brain, label: 'AI Library' },
             { id: 'codex', icon: BookOpen, label: 'Codex' },
             { id: 'nodes', icon: Layers, label: 'Clusters' },
             { id: 'aether', icon: Wifi, label: 'Aether' },
-            { id: 'map', icon: MapPin, label: 'GeoGrid' }
+            { id: 'set_planner', icon: Disc, label: 'Planner' },
+            { id: 'drive', icon: HardDrive, label: 'Drive Bridge' }
           ].map(t => (
             <button 
               key={t.id} 

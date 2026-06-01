@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import soundcloudRouter from './server/soundcloudRouter';
+import aiRouter from './server/aiRouter';
 
 async function startServer() {
   const app = express();
@@ -12,6 +13,7 @@ async function startServer() {
 
   // API Routes
   app.use('/api/audio', soundcloudRouter);
+  app.use('/api/ai', aiRouter);
 
   // Health check
   app.get('/api/health', (req, res) => {
